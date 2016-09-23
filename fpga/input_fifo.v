@@ -50,8 +50,9 @@ module input_fifo(
 	//
 
 	// FIFO Generator v9.3
-	// * Independent Clocks
+	// * Independent Clocks - Block RAM
 	// * 1st word Fall-Through
+	// * Write width: 8 depth: 1024, Read width: 8
 	// * Reset: off
 	fifo_bram_8x1024_fwft fifo_bram_8x1024_fwft(
 		.wr_clk(wr_clk),

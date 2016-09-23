@@ -45,7 +45,7 @@ module pkt_comm #(
 	
 
 	assign debug2 = 8'hd2;
-	assign app_status = app_mode;
+	assign app_status = 8'h00;
 
 
 	localparam DISABLE_TEST_MODES_0_AND_1 = 0;
