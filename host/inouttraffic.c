@@ -14,7 +14,7 @@ int DEBUG = 0;
 
 int fpga_get_io_state(struct libusb_device_handle *handle, struct fpga_io_state *io_state)
 {
-	int result = vendor_request(handle, 0x84, 0, 0, (char *)io_state, sizeof(io_state));
+	int result = vendor_request(handle, 0x84, 0, 0, (unsigned char *)io_state, sizeof(io_state));
 	if (DEBUG) printf("get_io_state: %x %x %x pkt: 0x%x debug: 0x%x 0x%x\n",
 		io_state->io_state, io_state->timeout, io_state->app_status,
 		io_state->pkt_comm_status, io_state->debug2, io_state->debug3);
@@ -458,7 +458,7 @@ int fpga_select_setup_io(struct fpga *fpga)
 {
 	struct fpga_status fpga_status;
 	int result = vendor_request(fpga->device->handle, 0x8C, fpga->num, 0,
-		(char *)&fpga_status, sizeof(fpga_status));
+		(unsigned char *)&fpga_status, sizeof(fpga_status));
 	fpga->cmd_count++;
 	if (result < 0)
 		return result;
@@ -657,6 +657,14 @@ int fpga_pkt_write(struct fpga *fpga)
 	if (!data) {
 		if (DEBUG) printf("fpga_pkt_write(): no data for transmission\n");
 		return 0;
+	}
+	
+	if (DEBUG >= 2) {
+		int i;
+		for (i=0; i < data_len; i++) {
+			printf("%02x ", data[i]);
+		}
+		printf("\n");
 	}
 	
 	int transferred = 0;

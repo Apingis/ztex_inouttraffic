@@ -30,6 +30,7 @@ struct pkt *pkt_new(int type, char *data, int data_len)
 	if (data_len > max_len) {
 		pkt_error("pkt_new(type %d): data_len(%d) exceeds %d bytes\n",
 				type, data_len, max_len);
+		exit(-1);
 		return NULL;
 	}
 	
@@ -53,6 +54,15 @@ struct pkt *pkt_new(int type, char *data, int data_len)
 	
 	total_pkt_count++;
 	return pkt;
+}
+
+unsigned int pkt_get_id(struct pkt *pkt)
+{
+	// currently for packets input to host,
+	// pkt_id is located in packet data as a reference to original packet
+	// while pkt_id in packet header is unused
+	unsigned char *data = (unsigned char *)pkt->data;
+	return data[0] | data[1] << 8;
 }
 
 void pkt_delete(struct pkt *pkt)
@@ -561,8 +571,8 @@ int pkt_comm_process_input_packet_data(struct pkt_comm *comm)
 		memcpy(pkt->data + pkt->partial_data_len, comm->input_buf + offset, remains);
 		pkt->partial_data_len = 0;
 
-		PKT_CHECKSUM_TYPE checksum = pkt_checksum(NULL, pkt->data, pkt->data_len);
-		PKT_CHECKSUM_TYPE checksum_got = pkt_checksum_read(pkt->data + pkt->data_len);
+		PKT_CHECKSUM_TYPE checksum = pkt_checksum(NULL, (unsigned char *)pkt->data, pkt->data_len);
+		PKT_CHECKSUM_TYPE checksum_got = pkt_checksum_read((unsigned char *)pkt->data + pkt->data_len);
 		if (checksum_got != checksum) {
 			pkt_error("pkt_comm_process_input_packet_data: bad checksum: got 0x%x, must be 0x%x\n",
 				checksum_got, checksum);

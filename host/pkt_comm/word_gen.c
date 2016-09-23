@@ -7,8 +7,8 @@
 
 
 struct word_gen word_gen_words_pass_by = {
-	0, { },	// ranges
-	1, 0	// insert 1 word at position 0
+	0, { },		// 0 ranges
+	1, { 0 }	// insert 1 word at position 0
 };
 
 

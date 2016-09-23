@@ -51,10 +51,12 @@ int ztex_scan(struct ztex_dev_list *new_dev_list, struct ztex_dev_list *dev_list
 		// dummy firmware, do upload
 		else if (!strncmp("USB-FPGA Module 1.15y (default)", dev->product_string, 31)) {
 			// upload firmware
-			result = ztex_firmware_upload(dev, "../inouttraffic.ihx");
-			if (result >= 0)
+			result = ztex_firmware_upload(dev, ZTEX_FW_IHX_PATH);
+			if (result >= 0) {
 				printf("SN %s: firmware uploaded\n", dev->snString);
-			(*fw_upload_count)++;
+				(*fw_upload_count)++;
+			}
+			// ztex_firmware_upload() resets the device
 			ztex_dev_list_remove(new_dev_list, dev);
 		}
 		// device with some 3rd party firmware - skip it
@@ -90,7 +92,7 @@ int ztex_timely_scan(struct ztex_dev_list *new_dev_list, struct ztex_dev_list *d
 	gettimeofday(&tv, NULL);
 	int time_diff = tv.tv_sec - ztex_scan_prev_time.tv_sec
 			+ (tv.tv_usec - ztex_scan_prev_time.tv_usec > 0 ? 0 : -1);
-	if ( !(ztex_scan_fw_upload_count && time_diff >= ZTEX_FW_UPLOAD_DELAY
+	if ( !( (ztex_scan_fw_upload_count && time_diff >= ZTEX_FW_UPLOAD_DELAY)
 			|| time_diff >= ztex_scan_interval) )
 		return 0;
 

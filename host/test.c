@@ -10,7 +10,8 @@
 #include "ztex.h"
 #include "inouttraffic.h"
 #include "ztex_scan.h"
-
+#include "pkt_comm/pkt_comm.h"
+#include "device.h"
 
 const int BUF_SIZE_MAX = 65536;
 
@@ -76,53 +77,15 @@ int buf_check(unsigned char *buf, int len, uint64_t *data)
 
 ///////////////////////////////////////////////////////////////////////////////////
 //
-// FPGA Initialization
+// Traverse device list, perform FPGA Initialization
+// specific for test.c
 //
-///////////////////////////////////////////////////////////////////////////////////
-
+// For most cases, it would be enough to call device_init_scan() / device_timely_scan()
+// that would call device_list_init() 
+//
 int device_unique_id = 0;
 
-int device_init_fpgas(struct device *device)
-{
-	int result;
-	
-	// See also device_list_fpga_reset(), device_list_set_app_mode()
-	
-	//result = device_fpga_reset(device);
-	//if (result < 0) {
-	//	device_invalidate(device);
-	//	return result;
-	//}
-
-	int i;
-	for (i = 0; i < device->num_of_fpgas; i++) {
-		struct fpga *fpga = &device->fpga[i];
-		/*
-		result = fpga_select(fpga);
-		if (result < 0) {
-			device_invalidate(device);
-			return result;
-		}
-		*/
-		//fpga_set_output_limit_min(fpga, (65536-8)/8); 
-		//result = fpga_set_app_mode(fpga, 1);
-		//if (result < 0) {
-		//	device_invalidate(device);
-		//	return result;
-		//}
-		
-		fpga->wr.buf = malloc(BUF_SIZE_MAX);
-		fpga->rd.buf = malloc(BUF_SIZE_MAX);
-		fpga->data_in = device_unique_id++ * 64;
-		//fpga->data_in = 0;//(unsigned)device_unique_id++ *16 + (unsigned)fpga->num + 1;
-		//fpga->data_in <<= 56;
-		//fpga->data_in |= 0xAB100020003000;
-		fpga->data_out = fpga->data_in;
-	} // for
-	return 0;
-}
-
-int device_list_init_fpgas(struct device_list *device_list)
+int device_list_init_fpgas_1(struct device_list *device_list)
 {
 	int ok_count = 0;
 	struct device *device;
@@ -130,13 +93,40 @@ int device_list_init_fpgas(struct device_list *device_list)
 		if (!device_valid(device))
 			continue;
 
-		int result = device_init_fpgas(device);
-		if (result < 0) {
-			printf("SN %s error %d initializing FPGAs.\n", device->ztex_device->snString, result);
-			device_invalidate(device);
+		int i;
+		for (i = 0; i < device->num_of_fpgas; i++) {
+			struct fpga *fpga = &device->fpga[i];
+
+			int result = fpga_select(fpga);
+			if (result < 0) {
+				device_invalidate(device);
+				return result;
+			}
+
+			// These fields are used only in test.c
+			fpga->wr.buf = malloc(BUF_SIZE_MAX);
+			fpga->rd.buf = malloc(BUF_SIZE_MAX);
+			if (!fpga->wr.buf || !fpga->rd.buf) {
+				fprintf(stderr, "device_list_init_fpgas: malloc\n");
+				return -1;
+			}
+			
+			// These fields are used only in test.c
+			fpga->data_in = device_unique_id++ * 8 + (unsigned)fpga->num + 1;
+			fpga->data_out = fpga->data_in;
+
+			// Application mode 1 (test): FPGAs send exactly what received
+			// using output_limit=1, bypassing pkt_comm
+			result = fpga_set_app_mode(fpga, 1);
+			if (result < 0) {
+				printf("SN %s error %d initializing FPGAs.\n",
+						device->ztex_device->snString, result);
+				device_invalidate(device);
+				return result;
+			}
 		}
-		else
-			ok_count ++;
+
+		ok_count ++;
 	}
 	return ok_count;
 }
@@ -216,72 +206,13 @@ int device_fpgas_rw(struct device *device)
 }
 
 
-///////////////////////////////////////////////////////////////////
-//
-// Hardware Handling
-//
-// device_list_init() takes list of devices with uploaded firmware
-// 1. upload bitstreams
-// 2. initialize FPGAs
-//
-///////////////////////////////////////////////////////////////////
-
-void device_list_init(struct device_list *device_list)//, struct ztex_dev_list *ztex_dev_list)
-{
-	// hardcoded into bitstream (vcr.v/BITSTREAM_TYPE)
-	const int BITSTREAM_TYPE = 1;
-
-	int result = device_list_check_bitstreams(device_list, BITSTREAM_TYPE, "../fpga/inouttraffic.bit");
-	if (result < 0)
-		return;
-	if (result > 0) {
-		//usleep(3000);
-		result = device_list_check_bitstreams(device_list, BITSTREAM_TYPE, NULL);
-	}
-
-	device_list_fpga_reset(device_list);
-	
-	device_list_init_fpgas(device_list);
-
-	device_list_set_app_mode(device_list, 1);
-}
-
-
-///////////////////////////////////////////////////////////////////
-//
-// Top Level Hardware Initialization Function.
-//
-// device_timely_scan() takes the list of devices currently in use
-//
-// 1. Performs ztex_timely_scan()
-// 2. Initialize devices
-// 3. Returns list of newly found and initialized devices.
-//
-///////////////////////////////////////////////////////////////////
-
-struct device_list *device_timely_scan(struct device_list *device_list)
-{
-	struct ztex_dev_list *ztex_dev_list_1 = ztex_dev_list_new();
-	ztex_timely_scan(ztex_dev_list_1, device_list->ztex_dev_list);
-
-	struct device_list *device_list_1 = device_list_new(ztex_dev_list_1);
-	device_list_init(device_list_1);
-
-	return device_list_1;
-}
-
-struct device_list *device_init_scan()
-{
-	struct ztex_dev_list *ztex_dev_list = ztex_dev_list_new();
-	ztex_init_scan(ztex_dev_list);
-	
-	struct device_list *device_list = device_list_new(ztex_dev_list);
-	device_list_init(device_list);
-	
-	return device_list;
-}
-
 /////////////////////////////////////////////////////////////////////////////////////
+
+struct device_bitstream bitstream_test = {
+	0x0001,					// type ID, hardcoded at vcr.v/BITSTREAM_TYPE
+	"../fpga/inouttraffic.bit",
+	{ 2, 16384, 32766 }		// struct pkt_comm_params
+};
 
 int main(int argc, char **argv)
 {
@@ -302,7 +233,7 @@ int main(int argc, char **argv)
 //ZTEX_DEBUG=1;
 //DEBUG = 1;
 
-	struct device_list *device_list = device_init_scan(device_list);
+	struct device_list *device_list = device_init_scan(&bitstream_test);
 	
 	int device_count = device_list_count(device_list);
 	printf("%d device(s) ZTEX 1.15y ready\n", device_count);
@@ -312,6 +243,7 @@ int main(int argc, char **argv)
 	//else
 	//	exit(0);
 	
+	device_list_init_fpgas_1(device_list);
 	
 	///////////////////////////////////////////////////////////////
 	//
@@ -341,11 +273,12 @@ int main(int argc, char **argv)
 		}
 
 		
-		struct device_list *device_list_1 = device_timely_scan(device_list);
+		struct device_list *device_list_1 = device_timely_scan(device_list, &bitstream_test);
 		int found_devices = device_list_count(device_list_1);
 		if (found_devices) {
 			printf("Found %d device(s) ZTEX 1.15y\n", found_devices);
 			ztex_dev_list_print(device_list_1->ztex_dev_list);
+			device_list_init_fpgas_1(device_list_1);
 		}
 		device_list_merge(device_list, device_list_1);
 

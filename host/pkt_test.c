@@ -14,9 +14,7 @@
 #include "pkt_comm/pkt_comm.h"
 #include "pkt_comm/word_list.h"
 #include "pkt_comm/word_gen.h"
-
-const int BUF_SIZE_MAX = 32768;
-
+#include "device.h"
 
 volatile int signal_received = 0;
 
@@ -33,172 +31,12 @@ void set_random()
 }
 
 
-struct pkt_comm_params params = { 2, 16384, 32766 };
+struct device_bitstream bitstream_test = {
+	0x0001,					// type ID, hardcoded at vcr.v/BITSTREAM_TYPE
+	"../fpga/inouttraffic.bit",
+	{ 2, 16384, 32766 }		// struct pkt_comm_params
+};
 
-int device_init_fpgas(struct device *device)
-{
-	int result;
-	int i;
-	for (i = 0; i < device->num_of_fpgas; i++) {
-		struct fpga *fpga = &device->fpga[i];
-		/*
-		result = fpga_select(fpga);
-		if (result < 0) {
-			device_invalidate(device);
-			return result;
-		}
-		*/
-		fpga->comm = pkt_comm_new(&params);
-		
-	} // for
-	return 0;
-}
-
-int device_list_init_fpgas(struct device_list *device_list)
-{
-	int ok_count = 0;
-	struct device *device;
-	for (device = device_list->device; device; device = device->next) {
-		if (!device_valid(device))
-			continue;
-
-		int result = device_init_fpgas(device);
-		if (result < 0) {
-			fprintf(stderr, "SN %s error %d initializing FPGAs.\n",
-					device->ztex_device->snString, result);
-			device_invalidate(device);
-		}
-		else
-			ok_count ++;
-	}
-	return ok_count;
-}
-
-
-///////////////////////////////////////////////////////////////////
-//
-// Hardware Handling
-//
-// device_list_init() takes list of devices with uploaded firmware
-// 1. upload bitstreams
-// 2. initialize FPGAs
-//
-///////////////////////////////////////////////////////////////////
-
-void device_list_init(struct device_list *device_list)
-{
-	// hardcoded into bitstream (vcr.v/BITSTREAM_TYPE)
-	const int BITSTREAM_TYPE = 1;
-
-	int result = device_list_check_bitstreams(device_list, BITSTREAM_TYPE, "../fpga/inouttraffic.bit");
-	if (result < 0)
-		return;
-	if (result > 0) {
-		//usleep(3000);
-		result = device_list_check_bitstreams(device_list, BITSTREAM_TYPE, NULL);
-	}
-
-	device_list_fpga_reset(device_list);
-	
-	device_list_init_fpgas(device_list);
-
-	device_list_set_app_mode(device_list, 2);
-}
-
-
-///////////////////////////////////////////////////////////////////
-//
-// Top Level Hardware Initialization Function.
-//
-// device_timely_scan() takes the list of devices currently in use
-//
-// 1. Performs ztex_timely_scan()
-// 2. Initialize devices
-// 3. Returns list of newly found and initialized devices.
-//
-///////////////////////////////////////////////////////////////////
-
-struct device_list *device_timely_scan(struct device_list *device_list)
-{
-	struct ztex_dev_list *ztex_dev_list_1 = ztex_dev_list_new();
-	ztex_timely_scan(ztex_dev_list_1, device_list->ztex_dev_list);
-
-	struct device_list *device_list_1 = device_list_new(ztex_dev_list_1);
-	device_list_init(device_list_1);
-
-	return device_list_1;
-}
-
-struct device_list *device_init_scan()
-{
-	struct ztex_dev_list *ztex_dev_list = ztex_dev_list_new();
-	ztex_init_scan(ztex_dev_list);
-	
-	struct device_list *device_list = device_list_new(ztex_dev_list);
-	device_list_init(device_list);
-	
-	return device_list;
-}
-
-
-/////////////////////////////////////////////////////////////////////////////////////
-
-unsigned long long wr_byte_count = 0, rd_byte_count = 0;
-
-int device_fpgas_pkt_rw(struct device *device)
-{
-	int result;
-	int num;
-	for (num = 0; num < device->num_of_fpgas; num++) {
-		
-		struct fpga *fpga = &device->fpga[num];
-		//if (!fpga->valid) // currently if r/w error on some FPGA, the entire device invalidated
-		//	continue;
-
-		//fpga_select(fpga); // unlike select_fpga() from Ztex SDK, it waits for i/o timeout
-		result = fpga_select_setup_io(fpga); // combines fpga_select(), fpga_get_io_state() and fpga_setup_output() in 1 USB request
-		if (result < 0) {
-			fprintf(stderr, "SN %s FPGA #%d fpga_select_setup_io() error: %d\n",
-				device->ztex_device->snString, num, result);
-			return result;
-		}
-
-		if (fpga->wr.io_state.pkt_comm_status) {
-			fprintf(stderr, "SN %s FPGA #%d error: pkt_comm_status=0x%02x\n",
-				device->ztex_device->snString, num, fpga->wr.io_state.pkt_comm_status);
-			return -1;
-		}
-
-		result = fpga_pkt_write(fpga);
-		if (result < 0) {
-			fprintf(stderr, "SN %s FPGA #%d write error: %d (%s)\n",
-				device->ztex_device->snString, num, result, libusb_strerror(result));
-			//fpga->valid = 0;
-			return result; // on such a result, device invalidated
-		}
-		if (result > 0) {
-			wr_byte_count += result;
-			if ( wr_byte_count/1024/1024 != (wr_byte_count - result)/1024/1024 ) {
-				//printf(".");
-				//fflush(stdout);
-			}
-		}
-
-		// read
-		result = fpga_pkt_read(fpga);
-		if (result < 0) {
-			fprintf(stderr, "SN %s FPGA #%d read error: %d (%s)\n",
-				device->ztex_device->snString, num, result, libusb_strerror(result));
-			//fpga->valid = 0;
-			return result; // on such a result, device invalidated
-		}
-		if (result > 0)
-			rd_byte_count += result; //fpga->rd.read_limit;
-
-	} // for( ;num_of_fpgas ;)
-	return 1;
-}
-//////////////////////////////////////////////////////////////////////////////
 
 // Range bbb00000 - bbb99999
 // Start from bbb00500, generate 10 (until bbb00509)
@@ -267,7 +105,7 @@ int main(int argc, char **argv)
 //ZTEX_DEBUG=1;
 //DEBUG = 1;
 
-	struct device_list *device_list = device_init_scan(device_list);
+	struct device_list *device_list = device_init_scan(&bitstream_test);
 	
 	int device_count = device_list_count(device_list);
 	fprintf(stderr, "%d device(s) ZTEX 1.15y ready\n", device_count);
@@ -299,7 +137,7 @@ int main(int argc, char **argv)
 
 	for ( ; ; ) {
 		// timely scan for new devices
-		struct device_list *device_list_1 = device_timely_scan(device_list);
+		struct device_list *device_list_1 = device_timely_scan(device_list, &bitstream_test);
 		int found_devices = device_list_count(device_list_1);
 		if (found_devices) {
 			fprintf(stderr, "Found %d device(s) ZTEX 1.15y\n", found_devices);
@@ -404,15 +242,6 @@ int main(int argc, char **argv)
 
 	gettimeofday(&tv1, NULL);
 	unsigned long usec = (tv1.tv_sec - tv0.tv_sec)*1000000 + tv1.tv_usec - tv0.tv_usec;
-	float kbyte_count = (wr_byte_count+rd_byte_count)/1024;
-	unsigned long long cmd_count = 0;
-
-	fprintf(stderr,
-		"%.2f MB write, %.2f MB read, rate %.2f MB/s\n",
-		(float)wr_byte_count/1024/1024,
-		(float)rd_byte_count/1024/1024, kbyte_count *1000000/usec /1024
-	);
-	
 
 	libusb_exit(NULL);
 }

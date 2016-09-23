@@ -8,3 +8,5 @@
 // ***************************************************************
 
 struct pkt *pkt_word_list_new(char **words);
+
+struct pkt *pkt_word_list_new_fixed_len(char *words, int num_words, int max_len);

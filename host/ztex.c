@@ -32,7 +32,7 @@ void ztex_error(const char *s, ...) {
 // length (16 bit) - size of the payload data (bytes 6 and 7 of setup data)
 // returns number of bytes sent
 //
-int vendor_command(struct libusb_device_handle *handle, int cmd, int value, int index, char *buf, int length)
+int vendor_command(struct libusb_device_handle *handle, int cmd, int value, int index, unsigned char *buf, int length)
 {
 	return libusb_control_transfer(handle, 0x40, cmd, value, index, buf, length, USB_CMD_TIMEOUT);
 }
@@ -49,7 +49,7 @@ int vendor_command(struct libusb_device_handle *handle, int cmd, int value, int 
 // * 1 ms delay before execution
 // * in case of error, continues until the timeout is reached
 //
-int vendor_request(struct libusb_device_handle *handle, int cmd, int value, int index, char *buf, int length)
+int vendor_request(struct libusb_device_handle *handle, int cmd, int value, int index, unsigned char *buf, int length)
 {
 	return libusb_control_transfer(handle, 0xc0, cmd, value, index, buf, length, USB_CMD_TIMEOUT);
 }
@@ -105,8 +105,8 @@ int ztex_device_new(libusb_device *usb_dev, struct ztex_device **ztex_dev)
 		return -1;
 	}
 
-	result = libusb_get_string_descriptor_ascii
-		(dev->handle, desc.iSerialNumber, dev->snString, ZTEX_SNSTRING_LEN);
+	result = libusb_get_string_descriptor_ascii(dev->handle, desc.iSerialNumber,
+			(unsigned char *)dev->snString, ZTEX_SNSTRING_LEN);
 	if (result < 0) {
 		ztex_error("ztex_device_new: libusb_get_string_descriptor_ascii(iSerialNumber): %s\n",
 				result, libusb_strerror(result));
@@ -120,8 +120,8 @@ int ztex_device_new(libusb_device *usb_dev, struct ztex_device **ztex_dev)
 		return result;
 	}
 	
-	result = libusb_get_string_descriptor_ascii
-		(dev->handle, desc.iProduct, dev->product_string, ZTEX_PRODUCT_STRING_LEN);
+	result = libusb_get_string_descriptor_ascii(dev->handle, desc.iProduct,
+			(unsigned char *)dev->product_string, ZTEX_PRODUCT_STRING_LEN);
 	if (result < 0) {
 		ztex_error("ztex_device_new: libusb_get_string_descriptor_ascii(iProduct): %s\n",
 				result, libusb_strerror(result));
@@ -137,7 +137,7 @@ int ztex_device_new(libusb_device *usb_dev, struct ztex_device **ztex_dev)
 	}
 
 	if (ztex_check_capability(dev, CAPABILITY_MULTI_FPGA)) {
-		char buf[3];
+		unsigned char buf[3];
 		// VR 0x50: getMultiFpgaInfo
 		result = vendor_request(dev->handle, 0x50, 0, 0, buf, 3);
 		if (result < 0) {
@@ -649,6 +649,11 @@ int ihx_load_data(struct ihx_data *ihx_data, FILE *fp)
 
 	fseek(fp, 0L, SEEK_END);
 	long file_size = ftell(fp);
+	if (!file_size) {
+		ztex_error("ihx_load_data: empty ihx file\n");
+		return -1;
+	}
+	
 	rewind(fp);
 	char *file_data = malloc(file_size);
 	if (!file_data) {
@@ -749,7 +754,7 @@ int ihx_load_data(struct ihx_data *ihx_data, FILE *fp)
 
 int ztex_reset_cpu(struct ztex_device *dev, int r)
 {
-	char buf[1] = { r };
+	unsigned char buf[1] = { r };
 	int result = vendor_command(dev->handle, 0xA0, 0xE600, 0, buf, 1);
 	if (result < 0) {
 		ztex_error("SN %s: ztex_reset_cpu(%d) returns %d (%s)\n",
@@ -767,7 +772,7 @@ int ztex_reset_cpu(struct ztex_device *dev, int r)
 int ztex_firmware_upload_ihx(struct ztex_device *dev, struct ihx_data *ihx_data)
 {
 	const int transactionBytes = 4096;
-	char buf[transactionBytes];
+	unsigned char buf[transactionBytes];
 	int result;
 	
 	result = ztex_reset_cpu(dev, 1);

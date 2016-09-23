@@ -14,7 +14,8 @@
 
 extern int DEBUG;
 
-// used by VR 0x84, fpga_get_io_state()
+// VR 0x84
+// Returned by fpga_get_io_state(), fpga_select_setup_io()
 // the most important thing here is io_state.IO_STATE_INPUT_PROG_FULL
 // When not asserted FPGA's input buffer has space for data
 struct fpga_io_state {
@@ -80,7 +81,7 @@ struct fpga_wr {
 	int io_state_timeout_count;
 	int wr_done;
 	uint64_t wr_count;
-	unsigned char *buf;
+	unsigned char *buf; // used only by test.c
 	int len;
 };
 
@@ -90,7 +91,7 @@ struct fpga_rd {
 	int rd_done;
 	uint64_t read_count;
 	uint64_t partial_read_count;
-	unsigned char *buf;
+	unsigned char *buf; // used only by test.c
 	int len;
 };
 

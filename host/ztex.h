@@ -41,9 +41,9 @@
 extern int ZTEX_DEBUG;
 
 
-int vendor_command(struct libusb_device_handle *handle, int cmd, int value, int index, char *buf, int length);
+int vendor_command(struct libusb_device_handle *handle, int cmd, int value, int index, unsigned char *buf, int length);
 
-int vendor_request(struct libusb_device_handle *handle, int cmd, int value, int index, char *buf, int length);
+int vendor_request(struct libusb_device_handle *handle, int cmd, int value, int index, unsigned char *buf, int length);
 
 
 // used by ZTEX SDK VR 0x30: getFpgaState
@@ -68,7 +68,7 @@ struct ztex_device {
 	int valid;
 	struct ztex_device *next;
 	// ZTEX specific stuff from device
-	unsigned char snString[ZTEX_SNSTRING_LEN];
+	char snString[ZTEX_SNSTRING_LEN];
 	unsigned char productId[4];
 	unsigned char fwVersion;
 	unsigned char interfaceVersion;

@@ -184,6 +184,7 @@ void main(int argc, char **argv)
 	if (result < 0) {
 		fprintf(stderr, "fpga_reset() returns %d, usb_strerror: %s\n", result, libusb_strerror(result));
 		fprintf(stderr, "Did you upload firmware?\n");
+		fprintf(stderr, "Use ZTEX SDK to upload firmware or other test programs (test, pkt_test) - they do upload firmware automately\n");
 		exit(EXIT_FAILURE);
 	}
 
@@ -201,8 +202,9 @@ void main(int argc, char **argv)
 		exit(0);
 	}
 
-	// FPGA application operates High-Speed interface with 8-byte words,
-	// expects you don't write unaligned
+	// FPGA application operates High-Speed interface with 2-byte words,
+	// simple_test uses 8-byte words for checks
+	// expecting you don't write unaligned
 	test_hs_inout(handle, 128, 4*1024*(test_factor > 4 ? 4 : test_factor));
 
 	// "-8" or anything unaligned to buffer size (512) would test PKTEND of Slave FIFO
@@ -210,10 +212,6 @@ void main(int argc, char **argv)
 
 	test_hs_inout(handle, 8192-8, 1*1024*test_factor);
 
-	//printf("Using max. r/w size: 16K input + (8K -8B) output FPGA buffers + 2* 2K USB device controller's buffers\n");
-	// It predictably returns with USB_ETIMEDOUT if 8 more bytes added.
-	//test_hs_inout(handle, 16384 +8192-8 +2*2048, 1*1024/2*test_factor);
-	
 	// FPGA's I/O buffers increased to 32K each
 	test_hs_inout(handle, 65536, 1024/4 * test_factor);
 

@@ -39,7 +39,7 @@
 #define PKT_HEADER_LEN	10
 
 // packet can be split when transmitted over link layer
-#define PKT_MAX_LEN	(4 * 65536) // 256K
+#define PKT_MAX_LEN	(16 * 65536) // 1MB
 
 #define PKT_CHECKSUM_LEN	4
 // PKT_CHECKSUM_TYPE must be unsigned type
@@ -51,7 +51,9 @@ struct pkt {
 	unsigned char type; // type must be > 0
 	int data_len;	// data length
 	unsigned short id;
-	unsigned char *data;
+	char *data;
+	// fields below are used by library;
+	// application developer usually would not need them
 	int header_ok;
 	// partially received packet
 	int partial_header_len;
@@ -69,6 +71,8 @@ int get_pkt_count(void);
 // Creates new packet. Does not allocate memory for data
 struct pkt *pkt_new(int type, char *data, int data_len);
 
+unsigned int pkt_get_id(struct pkt *pkt);
+
 // Deletes packet, also frees pkt->data
 void pkt_delete(struct pkt *pkt);
 
@@ -79,7 +83,7 @@ void pkt_delete(struct pkt *pkt);
 //
 // *****************************************************************
 
-#define PKT_QUEUE_MAX	2000
+#define PKT_QUEUE_MAX	100
 
 struct pkt_queue {
 	int count;			// number of packets currently in queue
