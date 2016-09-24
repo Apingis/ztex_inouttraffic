@@ -256,8 +256,9 @@ module pkt_comm #(
 	//
 	// IP Coregen: FIFO, DRAM, Independent Clocks, 1st Word Fall-Through
 	// Almost Full Flag
+	// Width 120, Depth 32
 	//
-	fifo_dram_async_112 fifo_dram_async_120 (
+	fifo_dram_async_120 fifo_dram_async_120 (
 		.wr_clk(WORD_GEN_CLK),
 		.din({ gen_id_r, word_id_out_r, word_gen_dout_r, pkt_id_r }),
 		//.din({ gen_id, word_id_out, word_gen_dout, pkt_id }),

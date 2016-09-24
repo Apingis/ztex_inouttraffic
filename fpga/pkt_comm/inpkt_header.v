@@ -56,6 +56,8 @@ module inpkt_header #(
 	
 	// flag is set when checksum_tmp contains checksum value from data-in
 	reg checksum_check_flag = 0;
+	// flag is set when header is processed, cleared when data starts
+	reg pkt_header = 1;
 
 	reg [PKT_LEN_MSB:0] pkt_byte_count_max;
 	reg [PKT_LEN_MSB:0] pkt_byte_count;
@@ -122,13 +124,15 @@ module inpkt_header #(
 			end
 
 			PKT_STATE_TYPE: begin
+				pkt_header <= 1;
+				pkt_byte_count <= 0;
+				
 				if (!din || din[PKT_TYPE_MSB:0] > PKT_MAX_TYPE || din[7:PKT_TYPE_MSB+1]) begin
 					// wrong packet type
 					err_pkt_type <= 1;
 					pkt_state <= PKT_STATE_ERROR;
 				end
 				else begin
-					pkt_byte_count <= 0;
 					pkt_type <= din[PKT_TYPE_MSB:0];
 					pkt_state <= PKT_STATE_RESERVED0_0;
 				end
@@ -181,6 +185,7 @@ module inpkt_header #(
 			end
 
 			PKT_STATE_DATA: begin
+				pkt_header <= 0;
 				if (pkt_byte_count == pkt_byte_count_max) begin
 					checksum_byte_count <= 0;
 					pkt_state <= PKT_STATE_CHECKSUM;
@@ -200,7 +205,7 @@ module inpkt_header #(
 					checksum_check_flag <= 1;
 					// Suppose checksum_byte_count is a power of 2
 					//checksum_byte_count <= 0;
-					if (pkt_byte_count == pkt_byte_count_max)
+					if (~pkt_header) //pkt_byte_count == pkt_byte_count_max) <-- bug caused error if pkt_len=1
 						pkt_state <= PKT_STATE_VERSION;
 					else
 						pkt_state <= PKT_STATE_DATA;
