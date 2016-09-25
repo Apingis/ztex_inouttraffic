@@ -53,7 +53,7 @@ struct word_gen word_gen_100k = {
 		{ 10, 0, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57 }
 	},
 	0, {},
-	10
+	300		// generate this many per word
 };
 
 // Range [0-9]{insert_word}[0-9][0-9] (1000 per word)
@@ -155,9 +155,9 @@ int main(int argc, char **argv)
 			if (signal_received)
 				break;
 
-			result = device_fpgas_pkt_rw(device);
+			result = device_pkt_rw(device);
 			if (result < 0) {
-				fprintf(stderr, "SN %s error %d doing r/w of FPGAs (%s)\n",
+				fprintf(stderr, "SN %s device_pkt_rw(): %d (%s)\n",
 					device->ztex_device->snString, result, libusb_strerror(result) );
 				device_invalidate(device);
 				continue;

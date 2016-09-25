@@ -405,6 +405,29 @@ int pkt_comm_create_output_buf(struct pkt_comm *comm)
 	return size;
 }
 
+/*
+// Not tested
+int pkt_comm_has_output_data(struct pkt_comm *comm)
+{
+	// There's data in output buffer
+	if (comm->output_buf) {
+		if (comm->output_buf_offset >= comm->output_buf_size
+				|| !comm->output_buf_size) {
+			// Looks like internal error
+			pkt_error("pkt_comm_has_output_data: %d, %d\n",
+				comm->output_buf_offset, comm->output_buf_size);
+			return 0;
+		}
+		return 1;
+	}
+	
+	// There's data in output queue
+	if (!comm->output_queue->count)
+		return 1;
+	
+	return 0;
+}
+*/
 
 unsigned char *pkt_comm_get_output_data(struct pkt_comm *comm, int *len)
 {
@@ -421,6 +444,7 @@ unsigned char *pkt_comm_get_output_data(struct pkt_comm *comm, int *len)
 	//printf("pkt: size %d off %d\n",size,offset);
 	if (size - offset <= comm->params->output_max_len) {
 		// TODO: check if there's data in output queue, add-up to buffer
+		// if remeining size is less than max.transfer size over link layer
 		*len = size - offset;
 	} else {
 		*len = comm->params->output_max_len;

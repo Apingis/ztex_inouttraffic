@@ -133,10 +133,183 @@ struct device_list *device_init_scan(struct device_bitstream *bitstream)
 }
 
 
+///////////////////////////////////////////////////////////////////
+//
+// Perform read/write operations on the device
+// using high-speed packet communication interface (pkt_comm).
+// Expecting caller doesn't mix this with other r/w functions.
+//
+// Return values:
+// <0 - error (expecting caller to invalidate / reset the device)
+// 0 - no data was actually send or received (because of either host or remote reasons)
+// >0 - success, some data was sent or received
+//
+///////////////////////////////////////////////////////////////////
+
+int device_pkt_rw(struct device *device)
+{
+	int data_transferred = 0;
+	int result;
+	int num;
+	for (num = 0; num < device->num_of_fpgas; num++) {
+		struct fpga *fpga = &device->fpga[num];
+		
+		// Get input buffer
+		unsigned char *input_buf = pkt_comm_input_get_buf(fpga->comm);
+		if (fpga->comm->error)
+			return -1;
+		// Input buffer is full - skip r/w operation
+		if (!input_buf) {
+			if (DEBUG) printf("fpga_pkt_rw(): input buffer is full\n");
+			continue;
+		}
+
+		// fpga_select(), fpga_get_io_state(), fpga_setup_output() in 1 USB request
+		result = fpga_select_setup_io(fpga);
+		if (result < 0) {
+			fprintf(stderr, "SN %s FPGA #%d fpga_select_setup_io() error: %d\n",
+				device->ztex_device->snString, num, result);
+			return result;
+		}
+
+		// TODO: human readable error description
+		if (fpga->wr.io_state.pkt_comm_status) {
+			fprintf(stderr, "SN %s FPGA #%d error: pkt_comm_status=0x%02x\n",
+				device->ztex_device->snString, num, fpga->wr.io_state.pkt_comm_status);
+			return -1;
+		}
+
+		if (fpga->wr.io_state.app_status) {
+			fprintf(stderr, "SN %s FPGA #%d error: app_status=0x%02x\n",
+				device->ztex_device->snString, num, fpga->wr.io_state.app_status);
+			return -1;
+		}
+		
+		if (fpga->wr.io_state.io_state & ~IO_STATE_INPUT_PROG_FULL) {
+			fprintf(stderr, "SN %s FPGA #%d error: io_state=0x%02x\n",
+				device->ztex_device->snString, num, fpga->wr.io_state.io_state);
+			return -1;
+		}
+
+		int input_full = fpga->wr.io_state.io_state & IO_STATE_INPUT_PROG_FULL;
+		if (input_full) {
+		
+			// FPGA input is full - no write
+			if (DEBUG) printf("#%d write: Input full\n", num);
+		
+		} else {
+			
+			// Get output buffer
+			int output_data_len = 0;
+			unsigned char *output_data = pkt_comm_get_output_data(fpga->comm,
+					&output_data_len);
+
+			if (!output_data) {
+			
+				// No data for output - no write
+				if (DEBUG) printf("fpga_pkt_write(): no data for output\n");
+			
+			} else {
+			
+				if (DEBUG >= 2) {
+					int i;
+					for (i=0; i < output_data_len; i++) {
+						if (i && !(i%32)) printf("\n");
+						printf("%02x ", output_data[i]);
+					}
+					printf("\n");
+				}
+				
+				// Performing write
+				int transferred = 0;
+				result = libusb_bulk_transfer(fpga->device->handle, 0x06,
+						output_data, output_data_len, &transferred, USB_RW_TIMEOUT);
+				if (DEBUG) printf("#%d write: result=%d tx=%d/%d\n",
+						fpga->num, result, transferred, output_data_len);
+				if (result < 0) {
+					return result;
+				}
+				if (transferred != output_data_len) {
+					return ERR_WR_PARTIAL;
+				}
+				
+				// Let pkt_comm register data transmit (clear buffers etc)
+				pkt_comm_output_completed(fpga->comm, output_data_len, 0);
+				data_transferred = 1;
+			}
+		} // output issues end
+
+
+		// No data to read from FPGA - continue with next one
+		int read_limit = fpga->rd.read_limit;
+		if (!read_limit)
+			continue;
+
+		// Performing read
+		int current_read_limit = read_limit;
+		for ( ; ; ) {
+			int transferred = 0;
+			result = libusb_bulk_transfer(fpga->device->handle, 0x82, input_buf,
+					current_read_limit, &transferred, USB_RW_TIMEOUT);
+			if (DEBUG) printf("#%d read: result=%d, rx=%d/%d\n",
+					fpga->num, result, transferred, current_read_limit);
+			if (result < 0) {
+				return result;
+			}
+			else if (transferred == 0) {
+				return ERR_RD_ZEROREAD;
+			}
+			else if (transferred != current_read_limit) { // partial read
+				if (DEBUG) printf("#%d PARTIAL READ: %d of %d\n",
+						fpga->num, transferred, current_read_limit);
+				current_read_limit -= transferred;
+				fpga->rd.partial_read_count++;
+				continue;
+			}
+			else
+				break;
+		} // for(;;)
+		
+		// Read completed.
+		if (DEBUG >= 2) {
+			int i;
+			for (i=0; i < read_limit; i++) {
+				if (i && !(i%32)) printf("\n");
+				printf("%02x ", input_buf[i]);
+			}
+			printf("\n");
+		}
+
+		// Let pkt_comm handle data (process packets, place into input queue)
+		result = pkt_comm_input_completed(fpga->comm, read_limit, 0);
+		if (result < 0)
+			return result;
+		data_transferred = 1;
+	}
+	
+	return data_transferred;
+}
+
+
+char *device_strerror(int error_code)
+{
+	static char buf[256];
+	sprintf(buf, "%d unknown error", error_code);
+	return buf;
+}
+
+
 /////////////////////////////////////////////////////////////////////////////////////
 
 //unsigned long long wr_byte_count = 0, rd_byte_count = 0;
 
+// - The function is obsolete
+// - There's a glitch: when input buffer / queue is full,
+// it still attempts to read resulting in FPGA error OUTPUT_LIMIT_NOT_DONE
+// (FPGA started output operation and did not complete).
+//
+// !!! Suggest usage of device_pkt_rw(struct device *device) !!!
+//
 int device_fpgas_pkt_rw(struct device *device)
 {
 	int result;

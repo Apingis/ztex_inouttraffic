@@ -29,6 +29,20 @@ struct device_list *device_init_scan(struct device_bitstream *bitstream);
 // at next invocations.
 struct device_list *device_timely_scan(struct device_list *device_list, struct device_bitstream *bitstream);
 
+// Perform read/write operations on the device
+// using high-speed packet communication interface (pkt_comm)
+// Expecting caller doesn't intermix with other r/w functions.
+// Return values:
+// <0 - error (expecting caller to invalidate or reset the device)
+// 0 - no data was actually send or received (because of either host or remote reasons)
+// >0 - success, some data was sent or received
+int device_pkt_rw(struct device *device);
+
+// Returns ASCII string containing human-readable error description.
+// ! not implemented yet
+char *device_strerror(int error_code);
+
+// ! Obsolete function (still works, a little buggy)
 // Perform r/w operation on device
 // using high-speed packet communication interface (pkt_comm)
 // Return values:

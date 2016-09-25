@@ -152,8 +152,14 @@ void pkt_comm_delete(struct pkt_comm *comm);
 //
 // *****************************************************************
 
-// Get data for output over link layer
-// Return NULL if there's no data for output
+// Returns true if there's data for output
+//int pkt_comm_has_output_data(struct pkt_comm *comm);
+
+// Get data for output over link layer. Can be used to check
+// if there's data for output. If all or part of the data was actually sent,
+// then the caller must call pkt_comm_output_completed().
+// Returns a pointer to data buffer or NULL if there's no data for output.
+// 'len' is updated with data length.
 unsigned char *pkt_comm_get_output_data(struct pkt_comm *comm, int *len);
 
 // Called after the transmission of data requested with pkt_comm_output_get_data()

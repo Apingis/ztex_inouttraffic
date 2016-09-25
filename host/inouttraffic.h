@@ -206,13 +206,15 @@ int fpga_select_setup_io(struct fpga *fpga);
 
 // checks io_state (unless previously checked with fpga_select_setup_io)
 // if input buffer isn't full - performs write
+// used by simple_test.c, test.c
 int fpga_write(struct fpga *fpga);
 
 // requests read_limit (unless previously requested with fpga_select_setup_io) and performs read
+// used by simple_test.c, test.c
 int fpga_read(struct fpga *fpga);
 
-// Synchronous write with pkt_comm
+// Synchronous write with pkt_comm - obsolete
 int fpga_pkt_write(struct fpga *fpga);
 
-// Synchronous read with pkt_comm
+// Synchronous read with pkt_comm - obsolete
 int fpga_pkt_read(struct fpga *fpga);
