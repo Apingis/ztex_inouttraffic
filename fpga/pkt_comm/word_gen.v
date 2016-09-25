@@ -129,6 +129,7 @@ module word_gen #(
 			.num_chars_eq0(din[NUM_CHARS_MSB:0] == 0), .num_chars_lt2(din[NUM_CHARS_MSB:0] < 2),
 			
 			.conf_en_start_idx(range_conf_en & conf_en_start_idx),
+			.start_idx_is_end(din[CHAR_BITS-1:0] == conf_last_char_num),
 			.conf_en_chars(range_conf_en & conf_en_chars), .conf_char_addr(conf_chars_count),
 			.pre_end_char(conf_chars_count + 1'b1 == conf_last_char_num),
 			
