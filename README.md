@@ -2,7 +2,7 @@
 
 Going to create applications for ZTEX 1.15y Multi-FPGA boards that would communicate at USB 2.0 speed? Using ztex_inouttraffic as a starting point, you would save weeks, skip studying timing diagrams, bits in various registers and hangups.
 
-## Contents
+## Content
 
 - C library to operate Ztex multi-FPGA boards at high-speed (up to 20-30 Mbytes/s) and corresponding firmware for USB device controller;
 - example FPGA application (Verilog), example host software in C.
@@ -22,11 +22,11 @@ device.c - contains top-level functions for application developer. That includes
 This requires in-depth understanding of Ztex board and USB device controller. Briefly:
 - USB device controller IC has embedded CPU (programmable in C). CPU can read/write controller's I/O pins individually or in groups of 8. Several dozens I/O pins are connected to pins of fpgas, all 4 fpga in parallel. USB packets can be handled by CPU which can read/write USB endpoint buffer and get/send data from/to fpgas. That would result in speed no more than 0.5-1 Mbyte/s. So this low-speed interface is to help establish a high-speed communication and for maintenance purposes.
 - High-speed interface can be of several forms. Slave FIFO variant is used by 'inouttraffic'. It can transmit 16 bits in one direction every cycle without usage of CPU, resulting in 20-30 Mbytes/s. Several points were taken in consideration:
--- because I/O pins of all 4 fpga's are connected in parallel, only 1 fpga is active at given time. Dedicated CS signals are used to define which one is selected;
--- when fpga sends or receives data, host and controller wait until the end of transmission before setting other fpga to be selected;
--- caution is taken not to overflow fpga's input buffer. Device controller also has its internal buffers and data should not get stuck there;
--- host software must know the length of data fpga is going to transmit, must request for reading exactly that many.
-One would ask - why so complex? Indeed, on a single-fpga Ztex board that's simple. Complexity is added by a requirement to select one fpga at a time while maintaining data integrity in a high-speed transmission.
+- because I/O pins of all 4 fpga's are connected in parallel, only 1 fpga is active at given time. Dedicated CS signals are used to define which one is selected;
+- when fpga sends or receives data, host and controller wait until the end of transmission before setting other fpga to be selected;
+- caution is taken not to overflow fpga's input buffer. Device controller also has its internal buffers and data should not get stuck there;
+- host software must know the length of data fpga is going to transmit, must request for reading exactly that many.
+- One would ask: why so complex? Indeed, on a single-fpga Ztex board that's simple. Complexity is added by a requirement to select one fpga at a time while maintaining data integrity in a high-speed transmission.
 
 (**) 'pkt_comm' explained.
 API provided by 'inouttraffic' allows high-speed communication. On fpga side, there're I/O FIFOs and on the host side, there's a number of functions for operation. You can see it works in test.c.
