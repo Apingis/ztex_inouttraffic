@@ -13,6 +13,7 @@ module word_gen_char_range #(
 	input num_chars_lt2,	// less than 2 chars in the range
 
 	input conf_en_start_idx,
+	input start_idx_is_end,	// char at starting index is the end in the range
 
 	input conf_en_chars,
 	input [NUM_CHARS_MSB:0] conf_char_addr,
@@ -33,7 +34,11 @@ module word_gen_char_range #(
 	reg num_chars_eq0_r = 1;
 	reg num_chars_lt2_r = 1;
 	reg [NUM_CHARS_MSB:0] current_idx = 0;
+	// current_idx is loaded (from start_idx) with index of end char in the range
+	reg current_idx_is_end = 0; 
 	reg [NUM_CHARS_MSB:0] start_idx;
+	// start_idx contains index of end char in the range
+	reg start_idx_is_end_r; 
 
 	wire do_next;
 
@@ -55,7 +60,7 @@ module word_gen_char_range #(
 		if (op_state == OP_STATE_READY | op_state == OP_STATE_NEXT_WORD)
 			current_idx <= start_idx;
 
-		else if ((do_next & pre_end_char_out) | num_chars_lt2_r)
+		else if ((do_next & (pre_end_char_out | current_idx_is_end)) | num_chars_lt2_r)
 			current_idx <= 0;
 
 		else if (do_next)
@@ -63,10 +68,17 @@ module word_gen_char_range #(
 
 	end
 
+	always @(posedge OP_CLK) begin
+		if (op_state == OP_STATE_READY | op_state == OP_STATE_NEXT_WORD)
+			current_idx_is_end <= start_idx_is_end_r;
+		else
+			current_idx_is_end <= 0;
+	end
+
 	reg carry_r;
 	always @(posedge OP_CLK)
 		if (do_next)
-			carry_r <= pre_end_char_out | num_chars_lt2_r;
+			carry_r <= pre_end_char_out | current_idx_is_end | num_chars_lt2_r;
 
 
 	// Extra register stage
@@ -112,8 +124,10 @@ module word_gen_char_range #(
 	end
 
 	always @(posedge CONF_CLK)
-		if (conf_en_start_idx)
+		if (conf_en_start_idx) begin
 			start_idx <= din[NUM_CHARS_MSB:0];
+			start_idx_is_end_r <= start_idx_is_end;
+		end
 
 endmodule
 
