@@ -1,87 +1,46 @@
-### Version 30.07.16 improvements ###
+## Overview
 
-Added some abstraction layer over existing API for purposes:
+Going to create applications for ZTEX 1.15y Multi-FPGA boards that would communicate at USB 2.0 speed? Using ztex_inouttraffic as a starting point, you would save weeks, skip studying timing diagrams, bits in various registers and hangups.
 
-- Hide implementation details from the developer, such as details of operation of multi-FPGA board or link layer communication details;
-- Allow host software and FPGA application to organize communication in a sequence of packets. On FPGA side, different packets might be directed into different subsystems of the application.
+## Contents
 
-Example application includes:
+- C library to operate Ztex multi-FPGA boards at high-speed (up to 20-30 Mbytes/s) and corresponding firmware for USB device controller;
+- example FPGA application (Verilog), example host software in C.
 
-- Processing of list of words;
-- Generation of words;
-- Output of results.
+## Details explained
+
+ztex.c - contains functions from original ztex.java library. Works with any firmware developed with Ztex SDK. Includes upload of firmware, bitstream, select individual fpga, reset given fpga to its pre-configuration state etc. Some functions such as write into onboard flash are not implemented - you can do that using FWLoader from Ztex SDK.
+
+inouttraffic.c - contains functions for input/output at high-speed. Uses ztex.c. There must be inouttraffic.ihx firmware that implement those operations, and corresponding bitstream (built base on top-level HDL module ztex_inouttraffic.v). (*)
+
+pkt_comm.c - functions and data structures used to communicate with fpgas in a sequence of application packets. Dependent on type, packet from the host goes into a pre-defined subsystem of fpga application. Similarily, data received from fpga aren't raw bytes with no start or end; pieces of data are organized as packets with properties such as ID, length, type, etc. and appear at application developer's hand as described in header files. This requires pkt_comm.v HDL module built on top of ztex_inouttraffic.v. (**)
+
+device.c - contains top-level functions for application developer. That includes: search, detection and initialization of boards; read/write at high-speed using pkt_comm. Operates many boards with single function call.
 
 
-### 1. Overview ###
+(*) 'inouttraffic' explained.
+This requires in-depth understanding of Ztex board and USB device controller. Briefly:
+- USB device controller IC has embedded CPU (programmable in C). CPU can read/write controller's I/O pins individually or in groups of 8. Several dozens I/O pins are connected to pins of fpgas, all 4 fpga in parallel. USB packets can be handled by CPU which can read/write USB endpoint buffer and get/send data from/to fpgas. That would result in speed no more than 0.5-1 Mbyte/s. So this low-speed interface is to help establish a high-speed communication and for maintenance purposes.
+- High-speed interface can be of several forms. Slave FIFO variant is used by 'inouttraffic'. It can transmit 16 bits in one direction every cycle without usage of CPU, resulting in 20-30 Mbytes/s. Several points were taken in consideration:
+-- because I/O pins of all 4 fpga's are connected in parallel, only 1 fpga is active at given time. Dedicated CS signals are used to define which one is selected;
+-- when fpga sends or receives data, host and controller wait until the end of transmission before setting other fpga to be selected;
+-- caution is taken not to overflow fpga's input buffer. Device controller also has its internal buffers and data should not get stuck there;
+-- host software must know the length of data fpga is going to transmit, must request for reading exactly that many.
+One would ask - why so complex? Indeed, on a single-fpga Ztex board that's simple. Complexity is added by a requirement to select one fpga at a time while maintaining data integrity in a high-speed transmission.
 
-Examples/inouttraffic application for Ztex 1.15y FPGA board.
+(**) 'pkt_comm' explained.
+API provided by 'inouttraffic' allows high-speed communication. On fpga side, there're I/O FIFOs and on the host side, there's a number of functions for operation. You can see it works in test.c.
+Application developers often demand more, including:
+- more abstract interface, without details of hardware or link layer so application can be ported to other device with different SDK;
+- more abilities to manage incoming and outgoing data. The goal is accomplished with a concept of splitting all the data into application level packets.
 
-Development considerations.
-
-- I've got such board and started application development;
-- I need high-speed communication to FPGA board;
-- My application would integrate with some other software written in C.
-
-Ztex SDK does provide examples/intraffic that is far away from what can be used as a starting point for application development.
-
-### 2. Objectives ###
-
-- Create some basic application that can be used as a starting point for application development (examples/inouttraffic);
-- Application must fully utilize USB 2.0 bandwith or hardware capabilities;
-- Must support multi-FPGA board;
-- Must include host software written in C;
-- Host software must compile and run on Unix and Windows;
-- Íost software must be able to operate several boards at same time.
-
-### 3. Design considerations. ###
-
-If you look at Ztex 1.15y board, you would see 4 FPGA chips and 1 USB device controller. Ztex SDK provides select_fpga() function that performs switching between FPGA's, however that's not enough.
-At high-speed communication, when you switch FPGA's the best case is data arrives to wrong destination or get lost, because of USB device controller's internal buffers. In worst case the system hangs up and requires power cycle.
-I found no applications for ZTEX 1.15y board that use USB device controller's High-Speed I/O interface.
-
-Examples/inouttraffic uses following approach:
-
-- before host writes to USB, it checks that FPGA has enough space in its input buffer; else some data get stuck in USB device controller's buffer;
-- before it switches between FPGA's, it checks that FPGA completed input operation;
-- FPGA does not write on will. It waits for a request from the host. On such a request, it reports the amount ready for output, and outputs exactly that many;
-- Host does not switch between FPGA's until it finishes reading of amount previously reported by FPGA. After that, it's safe to switch to other FPGA.
-
-### 4. Results ###
-
-- HDL developer gets basic application and starts with Input and Output FIFOs;
-- C developer gets basic I/O application.
-
-### 5. Requirements ###
-
-- Ztex SDK
-- Cygwin (on Windows)
-- libusb-1.0
-- gcc-core
-- WinUSB driver (used Zadig 2.2 to install)
-
-### 6. Test measurements ###
-
-- At development site, examples/intraffic from Ztex SDK performs at 30 MB/s. However that doesn't switch FPGAs and reads in 512K blocks (data generated on the fly).
-- At the same site test.c displays 20 MB/s. That reads/writes 8K blocks and switches FPGAs. That can be improved by few more MB/s with increase of r/w size and increase of FPGA's internal buffer.
-
-### 7. Host software development issues ###
+## Development issues
 
 Host software performs read/write operations with usb_bulk_transfer calls. That's blocking calls. So:
-
 - if you have several boards on different USB busses, you have to address the issue to achive I/O performance.
+- if you do some heavy computation on host CPU, and at same time you require high-speed communication to boards, that will require a separate thread or process to operate communication to boards. Alternatively, asynchronous USB transfer functions can be used.
 
-USB speed issues.
+## Miscellanous
 
-- USB transfers in packets, with substantial packet setup overhead. You get better speed results if you use larger packets;
-- USB control messages also take time and reduce I/O performance;
-- Speed depends on host hardware.
-
-### 8. TODO ###
-
-- Add reset of erroneous device;
-- Evaluate possible use of asynchronous USB transfer functions.
-
-### 9. Related issues ###
-
-- FPGA interconnect. Each FPGA has more than 200 I/O pins floating. I've checked if they are connected between FPGAs. Unluckily FPGAs aren't connected except for pins connected to USB device controller chip.
-- Broadcast input to let same data from the host get read by all FPGA's. One FPGA could read device controller's Slave FIFO as usual while other FPGAs could listen passively. That can be done if application would require such function.
+- FPGA interconnect. Each FPGA has more than 200 I/O pins floating. Unluckily FPGAs aren't connected to each other with that unused pins.
+- How to achive more performance over USB 2.0. You have to send/receive data in larger packets such as 16-64 Kbytes to achive performance equal to common hardware such as flash drive. Also USB transfers use CPU a lot, performance degrades if CPU is busy.

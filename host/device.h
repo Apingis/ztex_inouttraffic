@@ -31,7 +31,6 @@ struct device_list *device_timely_scan(struct device_list *device_list, struct d
 
 // Perform read/write operations on the device
 // using high-speed packet communication interface (pkt_comm)
-// Expecting caller doesn't intermix with other r/w functions.
 // Return values:
 // <0 - error (expecting caller to invalidate or reset the device)
 // 0 - no data was actually send or received (because of either host or remote reasons)

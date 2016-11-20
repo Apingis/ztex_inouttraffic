@@ -34,12 +34,15 @@ void set_random()
 struct device_bitstream bitstream_test = {
 	0x0001,					// type ID, hardcoded at vcr.v/BITSTREAM_TYPE
 	"../fpga/inouttraffic.bit",
-	{ 2, 16384, 32766 }		// struct pkt_comm_params
+	{	2,	// 2 is constant for the board; reflects the fact of 16-bit I/O
+		16384, // FPGA's input buffer can accept this many bytes when IO_STATE_INPUT_PROG_FULL deasserted
+		32766 // Size of FPGA's output buffer; can receive at most this many bytes in 1 read
+	}		// struct pkt_comm_params
 };
 
 
 // Range bbb00000 - bbb99999
-// Start from bbb00500, generate 10 (until bbb00509)
+// Start from bbb00500, generate 100
 struct word_gen word_gen_100k = {
 	8,
 	{ 
@@ -53,7 +56,7 @@ struct word_gen word_gen_100k = {
 		{ 10, 0, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57 }
 	},
 	0, {},
-	300		// generate this many per word
+	100		// generate this many per word
 };
 
 // Range [0-9]{insert_word}[0-9][0-9] (1000 per word)
@@ -168,7 +171,7 @@ int main(int argc, char **argv)
 			struct pkt *inpkt;
 			// Using FPGA #0 of each device for tests
 			while ( (inpkt = pkt_queue_fetch(device->fpga[0].comm->input_queue) ) ) {
-				
+				/*
 				printf("%s pkt 0x%02x len %d - id: %d w: %d cand: %d - %.8s\n",
 					device->ztex_device->snString,
 					inpkt->type,inpkt->data_len,
@@ -176,20 +179,13 @@ int main(int argc, char **argv)
 					inpkt->data[8] + inpkt->data[9] * 256,
 					inpkt->data[10] + inpkt->data[11] * 256 + inpkt->data[12] * 65536,
 					inpkt->data);
-				
-				/*
-				printf("inpkt type %d len %d: ",inpkt->type,inpkt->data_len);
-				int i;
-				for (i=0; i < inpkt->data_len; i++)
-					printf("%02x ", inpkt->data[i]);
-				printf("\n");
 				*/
-				/*
-				if (!(++pkt_count % 256000)) {
+				
+				if (!(++pkt_count % 64000)) {
 					fprintf(stderr,".");
 					fflush(stderr);
 				}
-				*/
+				
 				pkt_delete(inpkt);
 			}
 			//printf("\n");
@@ -198,9 +194,6 @@ int main(int argc, char **argv)
 			struct pkt *outpkt;
 			struct pkt *outpkt2;
 			int i;
-			int sent=0;
-			if (sent)
-				break;
 			
 			/*
 			for (i=0; i<1; i++) {
@@ -228,8 +221,6 @@ int main(int argc, char **argv)
 		
 			outpkt = pkt_word_list_new(words);
 			pkt_queue_push(device->fpga[0].comm->output_queue, outpkt);
-			
-			//sent=1;
 
 		} // for (device_list)
 
