@@ -1,6 +1,6 @@
 ## Overview
 
-Going to create applications for ZTEX 1.15y Multi-FPGA boards that would communicate at USB 2.0 speed? Using ztex_inouttraffic as a starting point, you would save weeks, skip studying timing diagrams, bits in various registers and hangups.
+Going to create applications for ZTEX 1.15y Multi-FPGA boards that would communicate at USB 2.0 speed? Using ztex_inouttraffic as a starting point, you will save weeks, skip studying timing diagrams, bits in various registers and hangups.
 
 ## Content
 
