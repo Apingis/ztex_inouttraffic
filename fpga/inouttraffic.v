@@ -95,7 +95,6 @@ module inouttraffic(
 	// 8-bit input, 16-bit output
 	//
 	// ********************************************************
-	//wire [63:0] app_dout;
 	wire [15:0] app_dout;
 	wire [7:0] app_mode;
 	wire [7:0] app_status, pkt_comm_status;
@@ -175,12 +174,8 @@ module inouttraffic(
 	// Vendor Command/Request (VCR) I/O interface
 	//
 	// ********************************************************
-	wire [7:0] vcr_in = PC;
-	wire [7:0] vcr_out;
-	assign PC = CS && PA7 ? vcr_out : 8'bz;
-	
-	(* KEEP_HIERARCHY="true" *) vcr vcr_inst(
-		.CS(CS), .vcr_in(vcr_in), .vcr_out(vcr_out), .clk_vcr_addr(PA0), .clk_vcr_data(PA1),
+	vcr vcr_inst(
+		.CS(CS), .vcr_inout(PC), .vcr_dir(PA7), .vcr_set_addr(PA0), .vcr_set_data(PA1),
 		// i/o goes with respect to IFCLK
 		.IFCLK(IFCLK),
 		// various inputs to be read by CPU
@@ -194,8 +189,7 @@ module inouttraffic(
 		.hs_en(hs_en),
 		.output_mode_limit(output_mode_limit),
 		.reg_output_limit(reg_output_limit),
-		.app_mode(app_mode),
-		.RESET_OUT()
+		.app_mode(app_mode)
 	);
 
 

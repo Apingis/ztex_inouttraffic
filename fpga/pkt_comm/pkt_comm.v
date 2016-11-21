@@ -221,59 +221,37 @@ module pkt_comm #(
 	// also [15:0] pkt_id from incoming packet.
 
 	
-	assign word_gen_rd_en = ~word_gen_empty & ~fifo120_almost_full_r;
-	
-	wire extra_reg_wr_en = word_gen_rd_en;
-	
+	// *************************************************************
 	//
-	// Words are written into intermediate FIFO at generation speed.
-	// Extra register stage is required.
+	// Going to output generated plaintext words via outpkt
 	//
-	reg fifo120_almost_full_r = 0;
-	always @(posedge WORD_GEN_CLK)
-		fifo120_almost_full_r <= fifo120_almost_full;
-	
-	reg [WORD_MAX_LEN * CHAR_BITS - 1:0] word_gen_dout_r;
-	reg [15:0] pkt_id_r, word_id_out_r;
-	reg [31:0] gen_id_r;
-	reg gen_end_r;
-	reg extra_reg_empty = 1;
-	
-	always @(posedge WORD_GEN_CLK)
-		if (extra_reg_wr_en) begin
-			extra_reg_empty <= 0;
-			word_gen_dout_r <= word_gen_dout;
-			pkt_id_r <= pkt_id; word_id_out_r <= word_id_out;
-			gen_id_r <= gen_id; gen_end_r <= gen_end;
-		end
-		else if (fifo120_wr_en)
-			extra_reg_empty <= 1;
-	
-	wire fifo120_wr_en = ~extra_reg_empty & ~fifo120_full;
-	
-	wire [119:0] fifo120_dout;
-	
-	//
-	// IP Coregen: FIFO, DRAM, Independent Clocks, 1st Word Fall-Through
-	// Almost Full Flag
-	// Width 120, Depth 32
-	//
-	fifo_dram_async_120 fifo_dram_async_120 (
-		.wr_clk(WORD_GEN_CLK),
-		.din({ gen_id_r, word_id_out_r, word_gen_dout_r, pkt_id_r }),
-		//.din({ gen_id, word_id_out, word_gen_dout, pkt_id }),
-		.wr_en(fifo120_wr_en),//word_gen_rd_en),
-		.full(fifo120_full),
-		.almost_full(fifo120_almost_full),
+`define RESULT_LEN 8
 
-		.rd_clk(CLK),
-		.dout(fifo120_dout),
-		.rd_en(wr_en_outpkt),
-		.empty(fifo120_empty)
+	// 1. Convert 7-bit to 8-bit if necessary <-- skipped, outpkt takes 7-bit chars
+	//
+	wire [CHAR_BITS * `RESULT_LEN - 1 :0] plaintext = word_gen_dout;
+		
+	// 2. Data is entering different clock domain
+	//
+	wire [15:0] pkt_id_2, word_id_out_2;
+	wire [31:0] gen_id_2;
+	wire [CHAR_BITS * `RESULT_LEN - 1 :0] plaintext_2;	
+
+	assign word_gen_rd_en = ~word_gen_empty & ~xdc_reg_full;
+	
+	xdc_reg #( .WIDTH(16 + 16 + 32 + CHAR_BITS * `RESULT_LEN)
+	) xdc_reg (
+		.wr_clk(WORD_GEN_CLK), .wr_en(word_gen_rd_en), .full(xdc_reg_full),
+		.din({ pkt_id, word_id_out, gen_id, plaintext }),
+		.rd_clk(CLK), .rd_en(outpkt_wr_en), .empty(xdc_reg_empty),
+		.dout({ pkt_id_2, word_id_out_2, gen_id_2, plaintext_2 })
 	);
-
-	assign wr_en_outpkt = ~fifo120_empty & ~full_outpkt;
 	
+
+	// 3. Write data into outpkt_v2
+	//
+	assign outpkt_wr_en = ~xdc_reg_empty & ~outpkt_full;
+
 
 	// **************************************************
 	//
@@ -296,28 +274,18 @@ module pkt_comm #(
 	// **************************************************
 	wire [15:0] outpkt_dout;
 	
-	// read from word_list
-	//assign word_list_rd_en = ~word_list_empty & ~full_outpkt;
-	//wire wr_en_outpkt = word_list_rd_en;
-	
-	// read from word_gen
-	//assign word_gen_rd_en = ~word_gen_empty & ~full_outpkt;
-	//wire wr_en_outpkt = word_gen_rd_en;
-	
-	
 	outpkt_word outpkt(
 		.CLK(CLK),
 		//.din({ 32'b0, word_id, word_list_dout }), .pkt_id(inpkt_id),
 		//.din({ gen_id, word_id_out, word_gen_dout }), .pkt_id(pkt_id),
-		.din(fifo120_dout[119:16]), .pkt_id(fifo120_dout[15:0]),
-		.wr_en(wr_en_outpkt), .full(full_outpkt),
+		.din({ gen_id_2, word_id_out_2, plaintext_2 }), .pkt_id(pkt_id_2),
+		.wr_en(outpkt_wr_en), .full(outpkt_full),
 		
 		.dout(outpkt_dout), .pkt_new(outpkt_new), .pkt_end(outpkt_end),
 		.rd_en(rd_en_outpkt), .empty(empty_outpkt)
 	);
 
-	//assign rd_en_outpkt = ~empty_outpkt & ~full;
-	//assign output_fifo_wr_en = rd_en_outpkt;
+
 	wire [15:0] dout_app_mode2;
 
 	assign rd_en_outpkt = ~empty_outpkt & ~full_outpkt_checksum;

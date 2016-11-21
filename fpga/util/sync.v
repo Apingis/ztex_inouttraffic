@@ -63,15 +63,16 @@ module sync_short_sig #(
 
 endmodule
 
-/*
+
 // Any frequency relation between wr_clk and rd_clk
 // 'out' duration is 1 clock cycle
-module sync_pulse(
+module sync_pulse (
 	input wr_clk,
 	input sig,
 	output busy,
 	
 	input rd_clk,
+	// 'out' must be OK in terms of metastability
 	output out
 	);
 
@@ -79,18 +80,18 @@ module sync_pulse(
 	always @(posedge wr_clk) flag_wr <= flag_wr ^ (sig & ~busy);
 
 	(* SHREG_EXTRACT="NO" *)
-	reg [2:0] sync_rd = 3'b0;
+	reg [2:0] sync_rd = 3'b000;
 	always @(posedge rd_clk) sync_rd <= {sync_rd[1:0], flag_wr};
 
 	(* SHREG_EXTRACT="NO" *)
-	reg [1:0] sync_wr = 2'b0;
+	reg [1:0] sync_wr = 2'b00;
 	always @(posedge wr_clk) sync_wr <= {sync_wr[0], sync_rd[2]};
 
-	assign out = (sync_rd[2] ^ sync_rd[1]);
 	assign busy = flag_wr ^ sync_wr[1];
+	assign out = sync_rd[2] ^ sync_rd[1];
 
 endmodule
-*/
+
 
 // Any frequency relation between wr_clk and rd_clk
 module sync_ack(
