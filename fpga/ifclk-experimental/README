@@ -1,0 +1,8 @@
+Use this files to create experimental bitstream
+that would not use on-chip frequency generation such as DCMs or PLLs.
+
+Add these files to project.
+Remove from project:
+- hs_io_v2.v
+- util/clocks.v
+- clocks.ucf

@@ -1,0 +1,16 @@
+
+NET "IFCLK_IN" TNM_NET = "IFCLK";
+TIMESPEC "TS_IFCLK" = PERIOD "IFCLK" 20.833 ns HIGH 50%;
+
+#
+# Input IFCLK does bypass CPLD and seems to arrive too late.
+# Input data seems to be already on the falling edge or changed.
+#
+# Since on-chip PLLs are unused, we cannot introduce phase backshift with PLL,
+# instead allocate input registers deep into FPGA fabric.
+# For this constraint to take effect, removed IOB=true properties
+# from input registers and flags (in hs_io_v2: input_r, FLAG*_R)
+#
+AREA_GROUP "hs_io_inst" RANGE=SLICE_X60Y80:SLICE_X69Y87;
+INST "hs_io_inst/*" AREA_GROUP = "hs_io_inst";
+

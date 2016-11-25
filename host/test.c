@@ -216,6 +216,9 @@ struct device_bitstream bitstream_test = {
 
 int main(int argc, char **argv)
 {
+	if (argc == 2)
+		bitstream_test.path = argv[1];
+	
 	set_random();
 
 	int result = libusb_init(NULL);

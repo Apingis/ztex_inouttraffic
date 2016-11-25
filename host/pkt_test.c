@@ -91,6 +91,9 @@ struct word_gen word_gen_test_input_bandwith = {
 
 int main(int argc, char **argv)
 {
+	if (argc == 2)
+		bitstream_test.path = argv[1];
+	
 	set_random();
 
 	int result = libusb_init(NULL);
