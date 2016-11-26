@@ -107,6 +107,10 @@ module vcr(
 	/////////////////////////////////////////////////////////
 	localparam [15:0] BITSTREAM_TYPE = 1;
 	reg [7:0] echo_content [3:0];
+	initial begin
+		echo_content[0] = 8'h01; echo_content[1] = 8'h02;
+		echo_content[2] = 8'h04; echo_content[3] = 8'h08;
+	end
 	reg RESET_R = 0;
 	
 

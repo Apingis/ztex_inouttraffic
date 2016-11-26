@@ -102,39 +102,13 @@ void init_IO() {
 //===========================================================
 
 //-----------------------------------------------
-// VC 0x71 : write to fpga
-// multi-byte write
-/*
-void ep0_write_data () {
-	BYTE b;
-    OEC = 0xff;
-    IOA0 = 0;
-    IOC = 0x71;//SETUPDAT[2];
-    IOA0 = 1;
-    IOA0 = 0;
-    
-	IOA7 = 0; //write
-    IOA1 = 0;
-	for ( b=0; b<EP0BCL; b++ ) {
-		IOC = EP0BUF[b];
-		IOA1 = 1;
-		IOA1 = 0;
-	}
-}
-
-ADD_EP0_VENDOR_COMMAND((0x71,,				
-,,
-    ep0_write_data();
-));; 
-*/
-//-----------------------------------------------
 void fpga_set_addr(BYTE addr) {
 	OEC = 0xff;
 	IOA7 = 0; // write to fpga
 	IOA0 = 0;
 	IOC = addr;
 	IOA0 = 1;
-	//NOP;
+	NOP;
 	IOA0 = 0;
 }
 //-----------------------------------------------
@@ -146,6 +120,7 @@ void ep0_read_data (BYTE offset, BYTE count) {
 	for ( b=offset; b < offset+count; b++ ) {
 		EP0BUF[b] = IOC;
 		IOA1 = 1;
+		NOP;
 		IOA1 = 0;
 	}
 	IOA7 = 0;
@@ -161,6 +136,7 @@ ADD_EP0_VENDOR_COMMAND((0x82,,
 	IOA1 = 0;
 	IOC = SETUPDAT[2];
 	IOA1 = 1;
+	NOP;
 	IOA1 = 0;
 ,,
 ));;
@@ -196,18 +172,6 @@ ADD_EP0_VENDOR_COMMAND((0x86,,
 	fpga_set_addr(SETUPDAT[2] ? 0x86 : 0x87);
 ,,
 ));;
-// fpga_set_output_limit_min()
-//ADD_EP0_VENDOR_COMMAND((0x83,,
-//	fpga_set_addr(0x83);
-//	IOA1 = 0;
-//	IOC = SETUPDAT[2];
-//	IOA1 = 1;
-//	IOA1 = 0;
-//	IOC = SETUPDAT[3];
-//	IOA1 = 1;
-//	IOA1 = 0;
-//,,
-//));;
 
 void fpga_test_get_id()
 {
@@ -217,11 +181,12 @@ void fpga_test_get_id()
 	for (i = 0; i < 4; i++) {
 		IOC = SETUPDAT[i + 2];
 		IOA1 = 1;
+		NOP;
 		IOA1 = 0;
 	}
-	ep0_read_data (0,4);//ep0_payload_transfer);
+	ep0_read_data (0,4);
 	fpga_set_addr(0x8A);// vcr_io/VCR_GET_FPGA_ID
-	ep0_read_data (4,1);//ep0_payload_transfer);
+	ep0_read_data (4,1);
 	EP0BUF[5] = 0;
 	fpga_set_addr(0xA1);//VCR_GET_ID_DATA
 	ep0_read_data (6,2);
@@ -250,6 +215,7 @@ void fpga_select(BYTE fpga_num) {
 
 		IOA1 = 0;
 		IOA1 = 1;
+		NOP;
 		IOA1 = 0;
 		// io_timeout is the 2nd byte from FPGA's vcr_io address 0x84
 		timeout = IOC;
