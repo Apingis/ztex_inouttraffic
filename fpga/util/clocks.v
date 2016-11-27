@@ -14,7 +14,7 @@
 
 
 module clocks #(
-	parameter WORD_GEN_FREQ = 234,
+	parameter WORD_GEN_FREQ = 216,//234,
 	parameter PKT_COMM_FREQ = 174,
 	parameter CORE_FREQ = 216,
 	parameter CMP_FREQ = 156

@@ -63,9 +63,8 @@ void fifo_reset() {
 }
 
 void init_IO() {
-	IOA0 = 0; IOA1 = 0; IOA7 = 0;
 	OEA = bmBIT0 | bmBIT1 | bmBIT7;
-	OEC = 0;
+	IOA0 = 0; IOA1 = 0; IOA7 = 0;
 
 	REVCTL = 0x3; SYNCDELAY;
 
@@ -104,20 +103,27 @@ void init_IO() {
 
 //-----------------------------------------------
 void fpga_set_addr(BYTE addr) {
-	OEC = 0xff; // write to fpga
+	OEC = 0xff;
+	IOA7 = 0; // write to fpga
+	IOA0 = 0;
 	IOC = addr;
 	IOA0 = 1;
+	NOP;
 	IOA0 = 0;
 }
 //-----------------------------------------------
 void ep0_read_data (BYTE offset, BYTE count) {
 	BYTE b;
-	OEC = 0; // read fpga
+	OEC = 0;
+	IOA7 = 1; // read fpga
+	IOA1 = 0;
 	for ( b=offset; b < offset+count; b++ ) {
 		EP0BUF[b] = IOC;
-		IOA0 = 1;
-		IOA0 = 0;
+		IOA1 = 1;
+		NOP;
+		IOA1 = 0;
 	}
+	IOA7 = 0;
 }
 void ep0_commit () {
 	EP0BCH = 0;
@@ -127,9 +133,11 @@ void ep0_commit () {
 // fpga_set_app_mode()
 ADD_EP0_VENDOR_COMMAND((0x82,,
 	fpga_set_addr(0x82);
+	IOA1 = 0;
 	IOC = SETUPDAT[2];
-	IOA0 = 1;
-	IOA0 = 0;
+	IOA1 = 1;
+	NOP;
+	IOA1 = 0;
 ,,
 ));;
 // fpga_get_io_state()
@@ -169,16 +177,18 @@ void fpga_test_get_id()
 {
 	BYTE i;
 	fpga_set_addr(0x88);// vcr_io/VCR_ECHO_REQUEST
+	IOA1 = 0;
 	for (i = 0; i < 4; i++) {
 		IOC = SETUPDAT[i + 2];
-		IOA0 = 1;
-		IOA0 = 0;
+		IOA1 = 1;
+		NOP;
+		IOA1 = 0;
 	}
 	ep0_read_data (0,4);
 	fpga_set_addr(0x8A);// vcr_io/VCR_GET_FPGA_ID
 	ep0_read_data (4,1);
 	EP0BUF[5] = 0;
-	fpga_set_addr(0x90); //VCR_GET_ID_DATA
+	fpga_set_addr(0xA1);//VCR_GET_ID_DATA
 	ep0_read_data (6,2);
 }
 // fpga_test_get_id()
@@ -196,20 +206,26 @@ void select_fpga ( BYTE fn );
 void fpga_select(BYTE fpga_num) {
 	BYTE timeout;
 	BYTE counter = 0;
-
+	if (select_num == fpga_num)
+		return;
 	for (;;) {
+		fpga_set_addr(0x84);// vcr_io/VCR_GET_IO_STATUS
+		OEC = 0;
+		IOA7 = 1; // read fpga
+
+		IOA1 = 0;
+		IOA1 = 1;
+		NOP;
+		IOA1 = 0;
+		// io_timeout is the 2nd byte from FPGA's vcr_io address 0x84
 		timeout = IOC;
-		IOA0 = 1;
-		IOA0 = 0;
 		if (timeout)
 			break;
 		// evade hang-up on buggy bitstream
 		if (counter++ == 255)
 			break;
-		NOP;
+		NOP; NOP; NOP; NOP; NOP;
 	}
-	if (select_num == fpga_num)
-		return;
 	fpga_set_addr(0x81); // 1. disable r/w
 	select_fpga(fpga_num);
 	fpga_set_addr(0x80); // enable r/w
@@ -221,14 +237,19 @@ ADD_EP0_VENDOR_COMMAND((0x8E,,
 ));;
 
 // fpga_select_setup_io()
-// SETUPDAT[2] : fpga_num
-ADD_EP0_VENDOR_REQUEST((0x8C,,
-	fpga_select(SETUPDAT[2]);
+void fpga_select_setup_io(BYTE fpga_num) {
+	if (select_num != fpga_num) {
+		fpga_select(fpga_num);
+	}
 	fpga_set_addr(0x84);// vcr_io/VCR_GET_IO_STATUS
 	ep0_read_data (0,6);
 	fpga_set_addr(0x85);// output limit
 	ep0_read_data (6,2);
 	ep0_commit();
+}
+// SETUPDAT[2] : fpga_num
+ADD_EP0_VENDOR_REQUEST((0x8C,,
+	fpga_select_setup_io(SETUPDAT[2]);
 ,,
 ));;
 
@@ -244,10 +265,6 @@ void main(void)
 
 	// Delay initialization until POST_FPGA_CONFIG
 	//init_IO();
-
-	IOA0 = 0; IOA1 = 0; IOA7 = 0;
-	OEA = bmBIT0 | bmBIT1 | bmBIT7;
-	OEC = 0;
 
 	while (1) {
 	}

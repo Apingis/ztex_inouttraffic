@@ -130,3 +130,19 @@ module sync_ack(
 			done_r <= 0;
 
 endmodule
+
+
+// sig is active for no more than 1 cycle
+module pulse1(
+	input CLK,
+	input sig,
+	output out
+	);
+	
+	reg done = 0;
+	always @(posedge CLK)
+		done <= sig;
+	
+	assign out = sig & ~done;
+	
+endmodule

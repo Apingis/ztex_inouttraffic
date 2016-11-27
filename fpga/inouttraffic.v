@@ -174,8 +174,8 @@ module inouttraffic(
 	// Vendor Command/Request (VCR) I/O interface
 	//
 	// ********************************************************
-	vcr vcr_inst(
-		.CS(CS), .vcr_inout(PC), .vcr_dir(PA7), .vcr_set_addr(PA0), .vcr_set_data(PA1),
+	vcr_v2 vcr_inst(
+		.CS(CS), .vcr_inout(PC), .vcr_clk_in(PA0),
 		// i/o goes with respect to IFCLK
 		.IFCLK(IFCLK),
 		// various inputs to be read by CPU

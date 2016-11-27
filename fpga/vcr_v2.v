@@ -2,6 +2,12 @@
 
 //***********************************************************
 //
+// vcr_v2: uses only 9 lines (was 11)
+// excluded:
+// PA7 - used by bitstream upload
+// PA1 - used by bitstream upload, other problems
+//
+//
 // Vendor Command / Vendor Request feature
 // Commands or requests are sent to EZ-USB via USB Endpoint 0
 // and handled by EZ-USB processor.
@@ -26,13 +32,11 @@
 //
 //***********************************************************
 
-module vcr(
+module vcr_v2(
 	input CS,
 	
 	inout [7:0] vcr_inout, //  Vendor Command/Request (VCR) address/data
-	input vcr_dir, // VCR direction: 0 = write to FPGA, 1 = read from FPGA
-	input vcr_set_addr, // on assertion, set (internal to FPGA) VCR IO address
-	input vcr_set_data, // on assertion, perform write or synchronous read
+	input vcr_clk_in,
 	
 	input IFCLK,
 	
@@ -57,28 +61,23 @@ module vcr(
 
 	wire ENABLE = CS;
 	
+	wire vcr_dir; // 0: to fpga; 1: from fpga
 	wire [7:0] vcr_out;
 	assign vcr_inout = ENABLE && vcr_dir ? vcr_out : 8'bz;
 	
 	(* IOB="true" *)
 	reg [7:0] vcr_in_r = 0;
 	(* IOB="true" *)
-	reg vcr_set_addr_r = 0, vcr_set_data_r = 0;
-	reg vcr_set_addr_r2 = 0, vcr_set_data_r2 = 0;
-
-	pulse1 pulse1_set_addr( .CLK(IFCLK),
-		.sig(vcr_set_addr_r2 & ENABLE), .out(vcr_set_addr_en) );
-	pulse1 pulse1_set_data( .CLK(IFCLK),
-		.sig(vcr_set_data_r2 & ENABLE), .out(vcr_set_data_en) );
-	
+	reg vcr_clk_r = 0;
+	reg vcr_clk_r2 = 0;
 	always @(posedge IFCLK) begin
-		vcr_set_addr_r <= vcr_set_addr;
-		vcr_set_addr_r2 <= vcr_set_addr_r;
-		vcr_set_data_r <= vcr_set_data;
-		vcr_set_data_r2 <= vcr_set_data_r;
 		vcr_in_r <= vcr_inout;
+		vcr_clk_r <= vcr_clk_in;
+		vcr_clk_r2 <= vcr_clk_r;
 	end
-
+	
+	pulse1 pulse1_vcr_clk( .CLK(IFCLK),
+			.sig(vcr_clk_r2 & ENABLE), .out(vcr_clk_en));
 	
 	// VCR address definitions
 	localparam VCR_SET_HS_IO_ENABLE = 8'h80;
@@ -93,12 +92,10 @@ module vcr(
 	localparam VCR_ECHO_REQUEST = 8'h88;
 	localparam VCR_GET_FPGA_ID = 8'h8A;
 	localparam VCR_RESET = 8'h8B;
-	localparam VCR_GET_ID_DATA = 8'hA1;
+	localparam VCR_GET_ID_DATA = 8'h90;
+	localparam VCR_GET_IO_TIMEOUT = 8'h91;
 	//localparam VCR_ = 8'h;
 
-	reg [7:0] vcr_addr = 0;
-	reg [5:0] vcr_state = 0;
-	
 
 	/////////////////////////////////////////////////////////
 	//
@@ -107,12 +104,20 @@ module vcr(
 	/////////////////////////////////////////////////////////
 	localparam [15:0] BITSTREAM_TYPE = 1;
 	reg [7:0] echo_content [3:0];
-	initial begin
-		echo_content[0] = 8'h01; echo_content[1] = 8'h02;
-		echo_content[2] = 8'h04; echo_content[3] = 8'h08;
-	end
 	reg RESET_R = 0;
 	
+
+	reg [7:0] addr = 0;
+	reg [3:0] count = 0;
+	
+	localparam STATE_WAIT = 0,
+				STATE_SET_ADDR = 1,
+				STATE_WR = 2,
+				STATE_RD = 3;
+	
+	(* FSM_EXTRACT="true" *)
+	reg [1:0] state = STATE_WAIT;
+
 
 	/////////////////////////////////////////////////////////
 	//
@@ -121,42 +126,84 @@ module vcr(
 	/////////////////////////////////////////////////////////
 
 	always @(posedge IFCLK) begin
-		if (vcr_set_addr_en) begin
-			vcr_addr <= vcr_in_r;
-			vcr_state <= 0;
-			
-			// For addresses below, no need to read or write, just select address.
-			if (vcr_in_r == VCR_SET_HS_IO_ENABLE)
-				hs_en <= 1;
-			else if (vcr_in_r == VCR_SET_HS_IO_DISABLE)
-				hs_en <= 0;
-			else if (vcr_in_r == VCR_SET_OUTPUT_LIMIT_ENABLE)
-				output_mode_limit <= 1;
-			else if (vcr_in_r == VCR_SET_OUTPUT_LIMIT_DISABLE)
-				output_mode_limit <= 0;
-			else if (vcr_in_r == VCR_RESET)
-				RESET_R <= 1;
-			else if (vcr_in_r == VCR_REG_OUTPUT_LIMIT)
-				reg_output_limit <= 1;
-			
-		end // vcr_set_addr_en
+		if (reg_output_limit)
+			reg_output_limit <= 0;
 
-		// Addresses for write
-		else if (vcr_set_data_en) begin
-			vcr_state <= vcr_state + 1'b1;
-			
-			if (vcr_addr == VCR_ECHO_REQUEST)
-				echo_content[ vcr_state[1:0] ] <= vcr_in_r;
-			else if (vcr_addr == VCR_SET_APP_MODE)
-				app_mode <= vcr_in_r;
-				
-		end // vcr_set_data_en
-		
-		else begin
-			if (reg_output_limit)
-				reg_output_limit <= 0;
-
+		case (state)
+		STATE_WAIT: if (vcr_clk_en) begin
+			addr <= vcr_in_r;
+			count <= 0;
+			state <= STATE_SET_ADDR;
 		end
+		
+		STATE_SET_ADDR: begin
+			// Addresses for write
+			if (addr == VCR_ECHO_REQUEST
+					|| addr == VCR_SET_APP_MODE)
+				state <= STATE_WR;
+			
+			// Addresses for read
+			else if (addr == VCR_GET_IO_STATUS
+					|| addr == VCR_GET_ID_DATA
+					|| addr == VCR_GET_FPGA_ID
+					|| addr == VCR_GET_IO_TIMEOUT)
+				state <= STATE_RD;
+				
+			// For addresses below, no need to read or write, just select address.
+			else if (addr == VCR_SET_HS_IO_ENABLE) begin
+				hs_en <= 1;
+				state <= STATE_WAIT;	
+			end
+			else if (addr == VCR_SET_HS_IO_DISABLE) begin
+				hs_en <= 0;
+				state <= STATE_WAIT;	
+			end
+			else if (addr == VCR_SET_OUTPUT_LIMIT_ENABLE) begin
+				output_mode_limit <= 1;
+				state <= STATE_WAIT;	
+			end
+			else if (addr == VCR_SET_OUTPUT_LIMIT_DISABLE) begin
+				output_mode_limit <= 0;
+				state <= STATE_WAIT;	
+			end
+			else if (addr == VCR_REG_OUTPUT_LIMIT) begin
+				reg_output_limit <= 1;
+				state <= STATE_RD;
+			end
+			else if (addr == VCR_RESET)
+				RESET_R <= 1;
+
+			else // invalid addr
+				state <= STATE_WAIT;	
+		end
+		
+		STATE_WR: if (vcr_clk_en) begin
+			if (addr == VCR_ECHO_REQUEST) begin
+				echo_content[ count[1:0] ] <= vcr_in_r;
+				if (count == 3) begin
+					state <= STATE_RD;
+					count <= 0;
+				end
+				else
+					count <= count + 1'b1;
+			end
+			else if (addr == VCR_SET_APP_MODE) begin
+				app_mode <= vcr_in_r;
+				state <= STATE_WAIT;
+			end	
+		end
+		
+		STATE_RD: if (vcr_clk_en) begin
+			count <= count + 1'b1;
+			if (addr == VCR_GET_FPGA_ID
+					|| addr == VCR_GET_IO_TIMEOUT
+					|| count == 1 && addr == VCR_REG_OUTPUT_LIMIT
+					|| count == 1 && addr == VCR_GET_ID_DATA
+					|| count == 3 && addr == VCR_ECHO_REQUEST
+					|| count == 5 && addr == VCR_GET_IO_STATUS)
+				state <= STATE_WAIT;
+		end
+		endcase
 	end
 
 	
@@ -167,29 +214,30 @@ module vcr(
 	/////////////////////////////////////////////////////////
 
 	assign vcr_out =
-		(vcr_addr == VCR_REG_OUTPUT_LIMIT && vcr_state == 0) ? output_limit[7:0] :
-		(vcr_addr == VCR_REG_OUTPUT_LIMIT && vcr_state == 1) ? output_limit[15:8] :
+		(addr == VCR_REG_OUTPUT_LIMIT && count == 0) ? output_limit[7:0] :
+		(addr == VCR_REG_OUTPUT_LIMIT && count == 1) ? output_limit[15:8] :
 		
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 0) ? {
+		(addr == VCR_GET_IO_STATUS && count == 0) ? {
 			{2{1'b0}}, io_err_write, io_fsm_error,
 			sfifo_not_empty, 1'b0, output_limit_not_done, hs_input_prog_full
 		} :
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 1) ? hs_io_timeout :
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 2) ? app_status :
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 3) ? pkt_comm_status :
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 4) ? debug2 :
-		(vcr_addr == VCR_GET_IO_STATUS && vcr_state == 5) ? debug3 :
+		(addr == VCR_GET_IO_STATUS && count == 1) ? hs_io_timeout :
+		(addr == VCR_GET_IO_STATUS && count == 2) ? app_status :
+		(addr == VCR_GET_IO_STATUS && count == 3) ? pkt_comm_status :
+		(addr == VCR_GET_IO_STATUS && count == 4) ? debug2 :
+		(addr == VCR_GET_IO_STATUS && count == 5) ? debug3 :
 		
-		(vcr_addr == VCR_ECHO_REQUEST) ? echo_content[ vcr_state[1:0] ] ^ 8'h5A :
+		(addr == VCR_ECHO_REQUEST) ? echo_content[ count[1:0] ] ^ 8'h5A :
 		
-		(vcr_addr == VCR_GET_ID_DATA && vcr_state == 0) ? BITSTREAM_TYPE[7:0] :
-		(vcr_addr == VCR_GET_ID_DATA && vcr_state == 1) ? BITSTREAM_TYPE[15:8] :
-		//(vcr_addr == VCR_GET_ID_DATA) ? id_data[ vcr_state[4:0] ] :
+		(addr == VCR_GET_ID_DATA && count == 0) ? BITSTREAM_TYPE[7:0] :
+		(addr == VCR_GET_ID_DATA && count == 1) ? BITSTREAM_TYPE[15:8] :
 		
-		(vcr_addr == VCR_GET_FPGA_ID) ? { {5{1'b0}}, FPGA_ID } :
-		//(vcr_addr ==  && vcr_state == ) ?  :
+		(addr == VCR_GET_FPGA_ID) ? { {5{1'b0}}, FPGA_ID } :
+
+		(addr == VCR_GET_IO_TIMEOUT) ? hs_io_timeout :
 		8'b0;
 
+	assign vcr_dir = state == STATE_RD;
 
 	startup_spartan6 startup_spartan6(.rst(RESET_R));
 

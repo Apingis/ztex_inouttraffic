@@ -205,7 +205,7 @@ module hs_io_v2 #(
 		end
 
 		else if (~CS | ~EN) begin
-			if (!io_timeout | (~CS & EN))
+			if (!io_timeout)// | (~CS & EN))
 				io_fsm_error <= 1;
 			
 			SLOE_R <= 1;
